@@ -1,0 +1,105 @@
+#include <WiFi.h>
+#include <WebServer.h>
+#include <HTTPClient.h>          // For sending data to Google Sheets
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+#define OLED_RESET -1
+
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+
+const char* ssid = "M14";
+const char* password = "12345678";
+
+// Google Apps Script Web App URL (replace with your own)
+String googleScriptURL = "https://script.google.com/macros/s/AKfycbxl6dzrQZkIas0W3IYOPTAbK1Xfc2Mq07vx6bORCx2Y7xqI_tEfvJxdWpOPfGmx73-btw/exec";
+
+WebServer server(80);  // Web server on port 80
+
+// Variables to hold sensor data
+float temperature = 0;
+float humidity = 0;
+int soilMoisture = 0;
+bool pumpStatus = false;
+
+// Handle /update requests from sender ESP32
+void handleUpdate() {
+  if (server.hasArg("temp")) temperature = server.arg("temp").toFloat();
+  if (server.hasArg("hum")) humidity = server.arg("hum").toFloat();
+  if (server.hasArg("soil")) soilMoisture = server.arg("soil").toInt();
+  if (server.hasArg("pump")) pumpStatus = (server.arg("pump") == "1");
+
+  server.send(200, "text/plain", "OK");
+
+  Serial.printf("Received update - Temp: %.1f, Hum: %.1f, Soil: %d, Pump: %s\n", temperature, humidity, soilMoisture, pumpStatus ? "ON" : "OFF");
+
+  sendDataToGoogleSheet();
+}
+
+// Send current sensor data to Google Sheets via HTTP GET
+void sendDataToGoogleSheet() {
+  if (WiFi.status() == WL_CONNECTED) {
+    HTTPClient http;
+    String url = googleScriptURL + "?temp=" + String(temperature)
+                 + "&hum=" + String(humidity)
+                 + "&soil=" + String(soilMoisture)
+                 + "&pump=" + String(pumpStatus ? "1" : "0");
+
+    http.begin(url);
+    int httpResponseCode = http.GET();
+
+    Serial.print("Google Sheets response code: ");
+    Serial.println(httpResponseCode);
+
+    http.end();
+  } else {
+    Serial.println("WiFi disconnected, cannot send data to Google Sheets");
+  }
+}
+
+void setup() {
+  Serial.begin(115200);
+
+  // Connect to WiFi
+  WiFi.begin(ssid, password);
+  Serial.print("Connecting to WiFi");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\nWiFi connected");
+  Serial.print("IP address: ");
+  Serial.println(WiFi.localIP());
+
+  // Initialize OLED
+  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+    Serial.println("SSD1306 allocation failed");
+    while (true);
+  }
+  display.clearDisplay();
+
+  // Setup web server routes
+  server.on("/update", handleUpdate);
+  server.begin();
+}
+
+void loop() {
+  server.handleClient();
+
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 0);
+
+  display.printf("Temp: %.1f C\n", temperature);
+  display.printf("Humidity: %.1f %%\n", humidity);
+  display.printf("Soil: %d %%\n", soilMoisture);
+  display.printf("Pump: %s\n", pumpStatus ? "ON" : "OFF");
+
+  display.display();
+
+  delay(1000);
+}

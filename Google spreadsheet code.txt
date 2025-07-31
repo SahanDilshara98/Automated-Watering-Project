@@ -1,0 +1,14 @@
+function doGet(e) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Sheet1"); // Sheet name adjust කරන්න
+
+  // Parameters from URL
+  var temp = e.parameter.temp;
+  var hum = e.parameter.hum;
+  var soil = e.parameter.soil;
+  var pump = e.parameter.pump;
+
+  // Add new row with timestamp + data
+  sheet.appendRow([new Date(), temp, hum, soil, pump]);
+
+  return ContentService.createTextOutput("Success");
+}
